@@ -3,7 +3,7 @@ import { cn } from "@/lib/utils";
 
 const NAV_ITEMS = [
   { to: "/", label: "Hazard map", end: true },
-  { to: "/dashboard", label: "Coordinator dashboard", end: false },
+  { to: "/dashboard", label: "Community insights", end: false },
 ];
 
 export function Logo() {
@@ -68,12 +68,11 @@ export default function Layout() {
       </main>
 
       <footer className="border-t border-border/70 bg-card">
-        <div className="mx-auto flex max-w-7xl flex-col gap-2 px-5 py-6 text-sm text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
+        <div className="mx-auto max-w-7xl px-5 py-6 text-sm text-muted-foreground">
           <p>
             <span className="font-bold text-foreground">CleanStreets</span> · Community-verified
             hazard map
           </p>
-          <p>Reports are saved in this browser for now.</p>
         </div>
       </footer>
     </div>

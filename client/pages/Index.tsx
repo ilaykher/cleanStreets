@@ -4,15 +4,18 @@ import HazardMap, { MapLegend } from "@/components/hazards/HazardMap";
 import { HazardCard } from "@/components/hazards/HazardCard";
 import { HazardDetailsDialog } from "@/components/hazards/HazardDetailsDialog";
 import { ReportForm } from "@/components/hazards/ReportForm";
-import { castVote, useHazardState } from "@/lib/hazard-store";
+import { castVote, confirmResolved, useHazardState } from "@/lib/hazard-store";
 import {
   AREAS,
   HAZARD_TYPES,
+  RECENTLY_RESOLVED_DAYS,
   SEVERITY_LABEL,
   SEVERITIES,
   VERIFY_THRESHOLD,
+  BOUNDARY_NOTE,
   isActiveStatus,
   type Area,
+  type AreaSummary,
   type HazardReport,
   type LatLngLiteral,
   type HazardTypeId,
@@ -28,7 +31,7 @@ const selectClass =
   "h-10 min-w-0 flex-1 rounded-lg border border-input bg-background px-2.5 text-sm font-medium outline-none focus-visible:ring-2 focus-visible:ring-ring";
 
 export default function Index() {
-  const { reports, myVotes } = useHazardState();
+  const { reports, myVotes, myResolutions } = useHazardState();
   const [pickMode, setPickMode] = useState(false);
   const [pickedLocation, setPickedLocation] = useState<LatLngLiteral | null>(null);
   const [tab, setTab] = useState<Tab>("pending");
@@ -36,8 +39,23 @@ export default function Index() {
   const [areaFilter, setAreaFilter] = useState<"all" | Area>("all");
   const [severityFilter, setSeverityFilter] = useState<"all" | Severity>("all");
   const [notice, setNotice] = useState<string | null>(null);
+  const [pickError, setPickError] = useState<string | null>(null);
   const [detailsId, setDetailsId] = useState<string | null>(null);
   const detailsReport = reports.find((report) => report.id === detailsId) ?? null;
+
+  const areaSummaries = useMemo(() => Object.fromEntries(AREAS.map((area) => {
+    const inArea = reports.filter((report) => report.area === area);
+    const typeCounts = new Map<HazardTypeId, number>();
+    inArea.forEach((report) => typeCounts.set(report.typeId, (typeCounts.get(report.typeId) ?? 0) + 1));
+    const [mostCommon] = [...typeCounts.entries()].sort((a, b) => b[1] - a[1]);
+    return [area, {
+      total: inArea.length,
+      pending: inArea.filter((report) => report.status === "pending").length,
+      verified: inArea.filter((report) => report.status === "verified").length,
+      resolved: inArea.filter((report) => report.status === "resolved").length,
+      mostCommon: mostCommon ? getHazardType(mostCommon[0]).label : "None yet",
+    } satisfies AreaSummary];
+  })) as Record<Area, AreaSummary>, [reports]);
 
   const matchesFilters = (report: HazardReport) =>
     (typeFilter === "all" || report.typeId === typeFilter) &&
@@ -52,29 +70,39 @@ export default function Index() {
     [reports, typeFilter, areaFilter, severityFilter],
   );
 
-  const verifiedReports = useMemo(
-    () =>
-      reports
+  const verifiedReports = useMemo(() => {
+    const now = Date.now();
+    return reports
         .filter(
           (report) =>
-            (isActiveStatus(report.status) || report.status === "resolved") && matchesFilters(report),
+            (isActiveStatus(report.status) ||
+              (report.status === "resolved" &&
+                now - Date.parse(report.resolvedAt ?? report.createdAt) <= RECENTLY_RESOLVED_DAYS * 86_400_000)) &&
+            matchesFilters(report),
         )
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
-    [reports, typeFilter, areaFilter, severityFilter],
-  );
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+  }, [reports, typeFilter, areaFilter, severityFilter]);
 
   const verifiedCount = reports.filter((report) => isActiveStatus(report.status)).length;
   const pendingCount = reports.filter((report) => report.status === "pending").length;
   const rejectedCount = reports.filter((report) => report.status === "rejected").length;
 
   const visibleList = tab === "pending" ? pendingReports : verifiedReports;
+  const mapReports = reports.filter((report) => report.status === "pending" || report.status === "verified");
 
   function handleVote(reportId: string, direction: VoteDirection) {
     castVote(reportId, direction);
   }
 
+  function handleConfirmResolved(reportId: string) {
+    if (confirmResolved(reportId)) {
+      setNotice("Thanks for checking in person. The hazard is removed from the public map after 3 community confirmations.");
+    }
+  }
+
   function startReport() {
     setNotice(null);
+    setPickError(null);
     setPickedLocation(null);
     setPickMode(true);
   }
@@ -82,16 +110,28 @@ export default function Index() {
   function cancelReport() {
     setPickMode(false);
     setPickedLocation(null);
+    setPickError(null);
+  }
+
+  function handlePickLocation(location: LatLngLiteral) {
+    setPickedLocation(location);
+    setPickError(null);
+  }
+
+  function handleInvalidPick() {
+    setPickedLocation(null);
+    setPickError("Please choose a location inside Bagong Silang.");
   }
 
   function handleSubmitted({ merged }: { merged: boolean }) {
     setPickMode(false);
     setPickedLocation(null);
+    setPickError(null);
     setTab("pending");
     setNotice(
       merged
-        ? "A report for this hazard already exists nearby, so your submission was counted as an upvote."
-        : `Thanks! Your report is pending. It becomes verified after ${VERIFY_THRESHOLD} upvotes from neighbors.`,
+        ? "Your upvote was added to the existing nearby report."
+        : `Thanks! Your report is pending. It becomes verified after ${VERIFY_THRESHOLD} net community upvotes.`,
     );
   }
 
@@ -151,25 +191,29 @@ export default function Index() {
               Marker color shows severity
             </span>
           </div>
+          <p className="border-b border-border bg-amber-50 px-5 py-2 text-xs font-medium text-amber-900">
+            {BOUNDARY_NOTE}
+          </p>
           <div className="relative h-[520px] sm:h-[600px] lg:h-[680px]">
             <HazardMap
-              reports={reports}
-              myVotes={myVotes}
-              onVote={handleVote}
+              reports={mapReports}
+              areaSummaries={areaSummaries}
+              onSelectReport={setDetailsId}
               pickMode={pickMode}
               pickedLocation={pickedLocation}
-              onPickLocation={setPickedLocation}
+              onPickLocation={handlePickLocation}
+              onInvalidPick={handleInvalidPick}
             />
-            {pickMode && (
-              <div className="pointer-events-none absolute left-4 top-4 rounded-full bg-foreground px-4 py-2 text-sm font-semibold text-background shadow-card">
-                Click the map to place your report
+            {pickMode && !pickedLocation && (
+              <div role="status" className="pointer-events-none absolute left-4 top-4 max-w-[calc(100%-2rem)] rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background shadow-card">
+                {pickError ?? "Click inside one of the outlined barangays to place your pin."}
               </div>
             )}
           </div>
         </div>
 
         <aside className="flex flex-col overflow-hidden rounded-3xl border border-border bg-card shadow-card lg:h-[calc(680px_+_3.5rem)]">
-          {pickMode ? (
+          {pickMode && pickedLocation ? (
             <div className="p-5">
               <h2 className="text-xl font-extrabold tracking-tight">New hazard report</h2>
               <p className="mt-1 text-sm text-muted-foreground">
@@ -179,9 +223,17 @@ export default function Index() {
                 <ReportForm
                   location={pickedLocation}
                   onSubmitted={handleSubmitted}
+                  onUpvoteExisting={(id) => castVote(id, "up")}
                   onCancel={cancelReport}
                 />
               </div>
+            </div>
+          ) : pickMode ? (
+            <div className="p-5">
+              <h2 className="text-xl font-extrabold tracking-tight">Choose a location</h2>
+              <p className="mt-1 text-sm text-muted-foreground">
+                The report form opens after you place a valid pin inside one of the outlined barangays.
+              </p>
             </div>
           ) : (
             <>
@@ -204,7 +256,7 @@ export default function Index() {
                     Pending ({pendingReports.length})
                   </TabButton>
                   <TabButton active={tab === "verified"} onClick={() => setTab("verified")}>
-                    Verified ({verifiedReports.length})
+                    Verified & recent ({verifiedReports.length})
                   </TabButton>
                 </div>
                 <div className="mt-3 grid grid-cols-1 gap-2 sm:grid-cols-3 lg:grid-cols-1 xl:grid-cols-3">
@@ -263,7 +315,9 @@ export default function Index() {
                       key={report.id}
                       report={report}
                       myVote={myVotes[report.id]}
+                      hasConfirmedResolution={Boolean(myResolutions[report.id])}
                       onVote={handleVote}
+                      onConfirmResolved={handleConfirmResolved}
                       onDetails={(item) => setDetailsId(item.id)}
                       showVerificationProgress={report.status === "pending"}
                     />
@@ -275,7 +329,29 @@ export default function Index() {
         </aside>
       </section>
 
-      <HazardDetailsDialog report={detailsReport} onClose={() => setDetailsId(null)} />
+      <section className="mx-auto max-w-7xl px-5 pb-16" aria-labelledby="how-it-works-title">
+        <div className="rounded-3xl border border-border bg-card p-6 shadow-card sm:p-8">
+          <h2 id="how-it-works-title" className="text-xl font-extrabold tracking-tight">How it works</h2>
+          <ol className="mt-5 grid gap-4 sm:grid-cols-2 lg:grid-cols-5">
+            {[
+              "Report a hazard by placing a pin.",
+              "Other residents upvote or downvote it.",
+              "It becomes verified after three net upvotes.",
+              "Verified hazards can be confirmed resolved.",
+              "After three resolution confirmations, it is removed from the map.",
+            ].map((step, index) => <li key={step} className="flex gap-3 text-sm leading-relaxed text-muted-foreground"><span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-primary/10 text-xs font-bold text-primary">{index + 1}</span>{step}</li>)}
+          </ol>
+        </div>
+      </section>
+
+      <HazardDetailsDialog
+        report={detailsReport}
+        myVote={detailsId ? myVotes[detailsId] : undefined}
+        hasConfirmedResolution={detailsId ? Boolean(myResolutions[detailsId]) : false}
+        onVote={handleVote}
+        onConfirmResolved={handleConfirmResolved}
+        onClose={() => setDetailsId(null)}
+      />
     </div>
   );
 }

@@ -1,26 +1,25 @@
 import { useMemo, type ReactNode } from "react";
-import { CountMinSketch } from "@/lib/count-min-sketch";
 import { FORECAST_TRIALS, HOTSPOT_THRESHOLD, forecastAreas } from "@/lib/forecast";
-import { setReportStatus, useHazardState } from "@/lib/hazard-store";
+import { CountMinSketch } from "@/lib/count-min-sketch";
+import { useHazardState } from "@/lib/hazard-store";
 import {
   AREAS,
   HAZARD_TYPES,
-  formatReportedAt,
   getHazardType,
   isActiveStatus,
   type Area,
-  type HazardReport,
   type HazardTypeId,
 } from "@/lib/hazards";
-import { StatusBadge, SeverityChip } from "@/components/hazards/HazardCard";
 import { cn } from "@/lib/utils";
 
 interface AreaRow {
   area: Area;
   verified: number;
+  total: number;
   mostCommon: string;
   repeated: number;
   pending: number;
+  resolved: number;
   rejected: number;
 }
 
@@ -32,37 +31,45 @@ export default function Dashboard() {
       verified: reports.filter((r) => isActiveStatus(r.status)).length,
       pending: reports.filter((r) => r.status === "pending").length,
       rejected: reports.filter((r) => r.status === "rejected").length,
-      forInspection: reports.filter((r) => r.status === "for_inspection").length,
+      resolved: reports.filter((r) => r.status === "resolved").length,
     }),
     [reports],
   );
 
   const trend = useMemo(() => {
-    const sketch = new CountMinSketch();
-    reports.forEach((report) => sketch.add(report.typeId));
+    const now = Date.now();
+    const recentSketch = new CountMinSketch();
+    const previousSketch = new CountMinSketch();
+    for (const report of reports) {
+      const age = now - Date.parse(report.createdAt);
+      if (age >= 0 && age <= 14 * 86_400_000) recentSketch.add(report.typeId);
+      else if (age > 14 * 86_400_000 && age <= 28 * 86_400_000) previousSketch.add(report.typeId);
+    }
     return HAZARD_TYPES.map((type) => ({
       id: type.id,
       label: type.label,
-      estimate: sketch.estimate(type.id),
+      recent: recentSketch.estimate(type.id),
+      previous: previousSketch.estimate(type.id),
     }))
-      .filter((row) => row.estimate > 0)
-      .sort((a, b) => b.estimate - a.estimate);
+      .filter((row) => row.recent > 0 || row.previous > 0)
+      .sort((a, b) => b.recent - a.recent);
   }, [reports]);
 
   const areaRows = useMemo<AreaRow[]>(
     () =>
       AREAS.map((area) => {
         const inArea = reports.filter((r) => r.area === area);
-        const active = inArea.filter((r) => isActiveStatus(r.status));
         const countsByType = new Map<HazardTypeId, number>();
-        active.forEach((r) => countsByType.set(r.typeId, (countsByType.get(r.typeId) ?? 0) + 1));
+        inArea.forEach((r) => countsByType.set(r.typeId, (countsByType.get(r.typeId) ?? 0) + 1));
         const [topType] = [...countsByType.entries()].sort((a, b) => b[1] - a[1]);
         return {
           area,
-          verified: active.length,
+          total: inArea.length,
+          verified: inArea.filter((r) => isActiveStatus(r.status)).length,
           mostCommon: topType ? getHazardType(topType[0]).label : "None yet",
           repeated: [...countsByType.values()].filter((count) => count >= 2).length,
           pending: inArea.filter((r) => r.status === "pending").length,
+          resolved: inArea.filter((r) => r.status === "resolved").length,
           rejected: inArea.filter((r) => r.status === "rejected").length,
         };
       }).sort((a, b) => b.verified - a.verified),
@@ -71,29 +78,24 @@ export default function Dashboard() {
 
   const forecast = useMemo(() => forecastAreas(reports, AREAS), [reports]);
 
-  const queue = useMemo(
-    () =>
-      reports
-        .filter((r) => isActiveStatus(r.status))
-        .sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
-    [reports],
-  );
-
-  const maxTrend = Math.max(1, ...trend.map((row) => row.estimate));
+  const maxTrend = Math.max(1, ...trend.map((row) => row.recent));
 
   return (
     <div className="mx-auto max-w-7xl space-y-6 px-5 pb-16 pt-8 sm:pt-12">
       <header className="max-w-3xl">
-        <p className="text-xs font-bold uppercase tracking-[0.18em] text-primary">Coordinator dashboard</p>
+        <p className="text-xs font-bold uppercase tracking-[0.18em] text-primary">Community insights</p>
         <h1 className="mt-3 text-3xl font-extrabold tracking-tight sm:text-4xl">
-          See which streets keep breaking, and where to send crews next.
+          See how hazard reports are changing across Bagong Silang.
         </h1>
+        <p className="mt-3 text-sm leading-relaxed text-muted-foreground">
+          Greedy online filtering decides at three net votes. Count-Min Sketch tracks hazard-type trends, and Monte Carlo trials estimate weekly hotspots.
+        </p>
       </header>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
         <StatCard label="Verified hazards" value={totals.verified} accent="text-emerald-700" />
         <StatCard label="Pending reports" value={totals.pending} accent="text-slate-600" />
-        <StatCard label="For inspection" value={totals.forInspection} accent="text-amber-700" />
+        <StatCard label="Resolved reports" value={totals.resolved} accent="text-teal-700" />
         <StatCard label="Rejected reports" value={totals.rejected} accent="text-zinc-700" />
       </div>
 
@@ -104,10 +106,12 @@ export default function Dashboard() {
               <thead className="text-xs uppercase tracking-wide text-muted-foreground">
                 <tr>
                   <th className="px-2 py-2 font-bold">Area</th>
+                  <th className="px-2 py-2 font-bold">Total</th>
                   <th className="px-2 py-2 font-bold">Verified</th>
                   <th className="px-2 py-2 font-bold">Most common</th>
                   <th className="px-2 py-2 font-bold">Repeats</th>
                   <th className="px-2 py-2 font-bold">Pending</th>
+                  <th className="px-2 py-2 font-bold">Resolved</th>
                   <th className="px-2 py-2 font-bold">Rejected</th>
                 </tr>
               </thead>
@@ -115,19 +119,20 @@ export default function Dashboard() {
                 {areaRows.map((row) => (
                   <tr key={row.area}>
                     <td className="px-2 py-3 font-bold">{row.area}</td>
-                    <td className="px-2 py-3 font-extrabold tabular-nums">{row.verified}</td>
+                    <td className="px-2 py-3 font-extrabold tabular-nums">{row.total}</td>
+                    <td className="px-2 py-3 tabular-nums">{row.verified}</td>
                     <td className="px-2 py-3">{row.mostCommon}</td>
                     <td className="px-2 py-3 tabular-nums">{row.repeated}</td>
                     <td className="px-2 py-3 tabular-nums">{row.pending}</td>
+                    <td className="px-2 py-3 tabular-nums">{row.resolved}</td>
                     <td className="px-2 py-3 tabular-nums">{row.rejected}</td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
-        </Panel>
-
-        <Panel title="Trend tracker" description="Most reported hazard types, estimated with a Count-Min Sketch.">
+      </Panel>
+        <Panel title="Trend tracker" description="Count-Min Sketch estimates from the latest 14 days compared with the previous 14 days; estimates may slightly overcount.">
           {trend.length === 0 ? (
             <p className="text-sm text-muted-foreground">No reports yet.</p>
           ) : (
@@ -136,12 +141,12 @@ export default function Dashboard() {
                 <li key={row.id}>
                   <div className="flex justify-between text-sm font-semibold">
                     <span>{row.label}</span>
-                    <span className="tabular-nums">{row.estimate}</span>
+                    <span className="tabular-nums">{row.recent} · {row.recent > row.previous ? "Increasing" : row.recent < row.previous ? "Decreasing" : "Unchanged"}</span>
                   </div>
                   <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-muted">
                     <div
                       className="h-full rounded-full bg-primary"
-                      style={{ width: `${(row.estimate / maxTrend) * 100}%` }}
+                      style={{ width: `${(row.recent / maxTrend) * 100}%` }}
                     />
                   </div>
                 </li>
@@ -190,56 +195,7 @@ export default function Dashboard() {
         </div>
       </Panel>
 
-      <Panel title="Verified hazard queue" description="Send confirmed hazards to inspection or mark them resolved.">
-        {queue.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No verified hazards yet.</p>
-        ) : (
-          <ul className="divide-y divide-border">
-            {queue.map((report) => (
-              <QueueItem key={report.id} report={report} />
-            ))}
-          </ul>
-        )}
-      </Panel>
     </div>
-  );
-}
-
-function QueueItem({ report }: { report: HazardReport }) {
-  const type = getHazardType(report.typeId);
-  return (
-    <li className="flex flex-col gap-3 py-4 sm:flex-row sm:items-center sm:justify-between">
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-2">
-          <p className="font-bold">{type.label}</p>
-          <StatusBadge status={report.status} />
-        </div>
-        <p className="mt-1 text-sm text-muted-foreground">
-          {report.area} · {report.upvotes} upvotes · reported {formatReportedAt(report.createdAt)}
-        </p>
-        <div className="mt-1">
-          <SeverityChip typeId={report.typeId} />
-        </div>
-      </div>
-      <div className="flex shrink-0 gap-2">
-        {report.status !== "for_inspection" && (
-          <button
-            type="button"
-            onClick={() => setReportStatus(report.id, "for_inspection")}
-            className="h-9 rounded-lg border border-border px-3 text-sm font-semibold transition-colors hover:bg-muted"
-          >
-            Send to inspection
-          </button>
-        )}
-        <button
-          type="button"
-          onClick={() => setReportStatus(report.id, "resolved")}
-          className="h-9 rounded-lg bg-primary px-3 text-sm font-semibold text-primary-foreground transition-opacity hover:opacity-90"
-        >
-          Mark resolved
-        </button>
-      </div>
-    </li>
   );
 }
 

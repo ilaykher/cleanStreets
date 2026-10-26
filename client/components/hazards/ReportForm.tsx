@@ -1,11 +1,10 @@
 import { useState, type FormEvent } from "react";
 import { MapPin } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { submitReport } from "@/lib/hazard-store";
+import { findNearbyDuplicate, submitReport } from "@/lib/hazard-store";
 import {
-  AREAS,
+  findAreaAtLocation,
   HAZARD_TYPES,
-  type Area,
   type HazardTypeId,
   type LatLngLiteral,
 } from "@/lib/hazards";
@@ -13,31 +12,45 @@ import {
 interface ReportFormProps {
   location: LatLngLiteral | null;
   onSubmitted: (result: { merged: boolean }) => void;
+  onUpvoteExisting: (reportId: string) => boolean;
   onCancel: () => void;
 }
 
 const selectClass =
   "h-11 w-full rounded-lg border border-input bg-background px-3 text-sm font-medium outline-none transition focus-visible:ring-2 focus-visible:ring-ring";
 
-export function ReportForm({ location, onSubmitted, onCancel }: ReportFormProps) {
+export function ReportForm({ location, onSubmitted, onUpvoteExisting, onCancel }: ReportFormProps) {
   const [typeId, setTypeId] = useState<HazardTypeId>("pothole");
-  const [area, setArea] = useState<Area>(AREAS[0]);
   const [description, setDescription] = useState("");
+  const [duplicateId, setDuplicateId] = useState<string | null>(null);
+  const [voteError, setVoteError] = useState("");
 
-  const canSubmit = Boolean(location) && description.trim().length >= 8;
+  const area = location ? findAreaAtLocation(location) : null;
+  const canSubmit = Boolean(location && area) && description.trim().length >= 8;
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!location || !canSubmit) return;
+  function saveReport(reportAnyway = false) {
+    if (!location || !area || !canSubmit) return;
     const result = submitReport({
       typeId,
-      area,
       description: description.trim(),
       lat: location.lat,
       lng: location.lng,
-    });
+    }, reportAnyway);
+    if (!result.reportId) return;
     setDescription("");
     onSubmitted({ merged: result.merged });
+  }
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!location || !area || !canSubmit) return;
+    const duplicate = findNearbyDuplicate({ typeId, description: description.trim(), lat: location.lat, lng: location.lng });
+    if (duplicate) {
+      setDuplicateId(duplicate.id);
+      setVoteError("");
+      return;
+    }
+    saveReport();
   }
 
   return (
@@ -48,33 +61,21 @@ export function ReportForm({ location, onSubmitted, onCancel }: ReportFormProps)
         </span>
         <p className="text-sm font-medium">
           {location
-            ? `Pinned at ${location.lat.toFixed(5)}, ${location.lng.toFixed(5)}`
+            ? `Pinned at ${location.lat.toFixed(5)}, ${location.lng.toFixed(5)} · ${area}`
             : "Click the map where the hazard is."}
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
-        <label className="space-y-1.5">
-          <span className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Hazard type</span>
-          <select className={selectClass} value={typeId} onChange={(e) => setTypeId(e.target.value as HazardTypeId)}>
-            {HAZARD_TYPES.map((type) => (
-              <option key={type.id} value={type.id}>
-                {type.label}
-              </option>
-            ))}
-          </select>
-        </label>
-        <label className="space-y-1.5">
-          <span className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Area</span>
-          <select className={selectClass} value={area} onChange={(e) => setArea(e.target.value as Area)}>
-            {AREAS.map((item) => (
-              <option key={item} value={item}>
-                {item}
-              </option>
-            ))}
-          </select>
-        </label>
-      </div>
+      <label className="block space-y-1.5">
+        <span className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Hazard type</span>
+        <select className={selectClass} value={typeId} onChange={(e) => setTypeId(e.target.value as HazardTypeId)}>
+          {HAZARD_TYPES.map((type) => (
+            <option key={type.id} value={type.id}>
+              {type.label}
+            </option>
+          ))}
+        </select>
+      </label>
 
       <label className="block space-y-1.5">
         <span className="text-xs font-bold uppercase tracking-wide text-muted-foreground">Description</span>
@@ -88,14 +89,26 @@ export function ReportForm({ location, onSubmitted, onCancel }: ReportFormProps)
         />
       </label>
 
-      <div className="flex gap-2">
+      {duplicateId ? (
+        <div className="space-y-3 rounded-xl border border-amber-300 bg-amber-50 p-4" role="alert">
+          <p className="text-sm font-semibold text-amber-950">A similar hazard was reported nearby. Do you want to upvote the existing report instead?</p>
+          {voteError && <p className="text-xs text-rose-700">{voteError}</p>}
+          <div className="flex flex-col gap-2 sm:flex-row">
+            <Button type="button" className="h-10 flex-1" onClick={() => {
+              if (onUpvoteExisting(duplicateId)) onSubmitted({ merged: true });
+              else setVoteError("You have already voted on this report, or it is no longer pending.");
+            }}>Upvote existing report</Button>
+            <Button type="button" variant="outline" className="h-10 flex-1" onClick={() => saveReport(true)}>Report anyway</Button>
+          </div>
+        </div>
+      ) : <div className="flex gap-2">
         <Button type="button" variant="outline" className="h-11 flex-1 rounded-lg" onClick={onCancel}>
           Cancel
         </Button>
         <Button type="submit" disabled={!canSubmit} className="h-11 flex-1 rounded-lg font-bold">
           Submit report
         </Button>
-      </div>
+      </div>}
     </form>
   );
 }

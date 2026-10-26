@@ -2,6 +2,7 @@ import { MapPin, ThumbsDown, ThumbsUp } from "lucide-react";
 import { cn } from "@/lib/utils";
 import {
   COLORS,
+  RESOLVE_THRESHOLD,
   SEVERITY_LABEL,
   STATUS_LABEL,
   VERIFY_THRESHOLD,
@@ -15,8 +16,6 @@ import {
 const STATUS_STYLE: Record<HazardStatus, string> = {
   pending: "bg-slate-100 text-slate-600",
   verified: "bg-emerald-100 text-emerald-800",
-  for_inspection: "bg-amber-100 text-amber-800",
-  reopened: "bg-orange-100 text-orange-800",
   resolved: "bg-teal-100 text-teal-800",
   rejected: "bg-zinc-200 text-zinc-700",
 };
@@ -52,6 +51,8 @@ interface HazardCardProps {
   report: HazardReport;
   myVote?: VoteDirection;
   onVote: (reportId: string, direction: VoteDirection) => void;
+  onConfirmResolved?: (reportId: string) => void;
+  hasConfirmedResolution?: boolean;
   onDetails?: (report: HazardReport) => void;
   showVerificationProgress?: boolean;
 }
@@ -60,13 +61,15 @@ export function HazardCard({
   report,
   myVote,
   onVote,
+  onConfirmResolved,
+  hasConfirmedResolution = false,
   onDetails,
   showVerificationProgress = false,
 }: HazardCardProps) {
   const type = getHazardType(report.typeId);
-  const isRejected = report.status === "rejected";
-  const votingClosed = Boolean(myVote) || isRejected;
-  const progress = Math.min(report.upvotes / VERIFY_THRESHOLD, 1);
+  const votingClosed = Boolean(myVote) || report.status !== "pending";
+  const netVotes = report.upvotes - report.downvotes;
+  const progress = Math.min(Math.max(netVotes, 0) / VERIFY_THRESHOLD, 1);
 
   return (
     <article className="rounded-2xl border border-border bg-card p-4 shadow-card">
@@ -88,9 +91,9 @@ export function HazardCard({
       {showVerificationProgress && (
         <div className="mt-4">
           <div className="flex justify-between text-xs font-semibold text-muted-foreground">
-            <span>Upvotes</span>
+            <span>Net votes to verify</span>
             <span>
-              {report.upvotes} / {VERIFY_THRESHOLD} needed
+              {netVotes > 0 ? "+" : ""}{netVotes} / +{VERIFY_THRESHOLD}
             </span>
           </div>
           <div className="mt-1.5 h-2 overflow-hidden rounded-full bg-muted">
@@ -132,6 +135,17 @@ export function HazardCard({
           Downvote · {report.downvotes}
         </button>
       </div>
+
+      {report.status === "verified" && onConfirmResolved && (
+        <button
+          type="button"
+          onClick={() => onConfirmResolved(report.id)}
+          disabled={hasConfirmedResolution}
+          className="mt-2 h-9 w-full rounded-lg border border-teal-200 text-sm font-semibold text-teal-800 transition-colors hover:bg-teal-50 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {hasConfirmedResolution ? "You confirmed this hazard is resolved" : `Confirm resolved in person · ${report.resolutionConfirmations}/${RESOLVE_THRESHOLD}`}
+        </button>
+      )}
 
       {onDetails && (
         <button

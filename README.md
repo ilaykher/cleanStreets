@@ -1,5 +1,13 @@
 # CleanStreet
 
+CleanStreets is a browser-local hazard reporting prototype for Bagong Silang. Reports and votes are saved in this browser's local storage; sample barangay outlines are approximate and for demonstration only.
+
+## Algorithm demonstration
+
+- **Greedy online vote filtering:** each pending report is updated as votes arrive. Three net upvotes verify it; three net downvotes reject it. Each browser can vote once per report.
+- **Count-Min Sketch:** the trend tracker estimates hazard type counts for the latest 14 days and the previous 14 days.
+- **Monte Carlo simulation:** the dashboard estimates weekly verified hazards and hotspot probability for each barangay from recent sample/report history.
+
 ## Run locally in VS Code
 
 ### Requirements

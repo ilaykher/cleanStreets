@@ -1,5 +1,9 @@
+import { BARANGAY_BOUNDARIES } from "./barangay-boundaries";
+
 export const VERIFY_THRESHOLD = 3;
 export const REJECT_THRESHOLD = 3;
+export const RESOLVE_THRESHOLD = 3;
+export const RECENTLY_RESOLVED_DAYS = 7;
 export const DUPLICATE_RADIUS_METERS = 40;
 
 export const AREAS = [
@@ -45,8 +49,6 @@ export interface HazardType {
 export const HAZARD_STATUSES = [
   "pending",
   "verified",
-  "for_inspection",
-  "reopened",
   "resolved",
   "rejected",
 ] as const;
@@ -55,9 +57,7 @@ export type HazardStatus = (typeof HAZARD_STATUSES)[number];
 export const STATUS_LABEL: Record<HazardStatus, string> = {
   pending: "Pending verification",
   verified: "Verified",
-  for_inspection: "For inspection",
-  reopened: "Reopened",
-  resolved: "Resolved",
+  resolved: "Recently resolved",
   rejected: "Rejected",
 };
 
@@ -70,6 +70,44 @@ export const COLORS = {
   resolved: "#4FA784",
   picked: "#0B7A5C",
 } as const;
+
+export const BOUNDARY_NOTE = "Approximate OpenStreetMap-informed mock boundaries for demonstration only; not official barangay limits.";
+export const APPROXIMATE_BOUNDARIES: Record<Area, LatLngLiteral[]> = Object.fromEntries(
+  BARANGAY_BOUNDARIES.map(({ area, coordinates }) => [
+    area,
+    coordinates[0].map(([lng, lat]) => ({ lat, lng })),
+  ]),
+) as Record<Area, LatLngLiteral[]>;
+
+export function findAreaAtLocation(point: LatLngLiteral): Area | null {
+  for (const area of AREAS) {
+    const polygon = APPROXIMATE_BOUNDARIES[area];
+    let inside = false;
+    for (let i = 0, j = polygon.length - 1; i < polygon.length; j = i++) {
+      const a = polygon[j];
+      const b = polygon[i];
+      const cross = (point.lng - a.lng) * (b.lat - a.lat) - (point.lat - a.lat) * (b.lng - a.lng);
+      const onSegment = Math.abs(cross) < 1e-10 &&
+        point.lng >= Math.min(a.lng, b.lng) && point.lng <= Math.max(a.lng, b.lng) &&
+        point.lat >= Math.min(a.lat, b.lat) && point.lat <= Math.max(a.lat, b.lat);
+      if (onSegment) return area;
+      if ((a.lat > point.lat) !== (b.lat > point.lat) &&
+        point.lng < ((b.lng - a.lng) * (point.lat - a.lat)) / (b.lat - a.lat) + a.lng) {
+        inside = !inside;
+      }
+    }
+    if (inside) return area;
+  }
+  return null;
+}
+
+export interface AreaSummary {
+  total: number;
+  pending: number;
+  verified: number;
+  resolved: number;
+  mostCommon: string;
+}
 
 export function formatReportedAt(iso: string) {
   return new Intl.DateTimeFormat("en-PH", {
@@ -91,6 +129,8 @@ export interface HazardReport {
   createdAt: string;
   upvotes: number;
   downvotes: number;
+  resolutionConfirmations: number;
+  resolvedAt: string | null;
   status: HazardStatus;
 }
 
@@ -103,7 +143,7 @@ export function getHazardType(id: HazardTypeId): HazardType {
 }
 
 export function isActiveStatus(status: HazardStatus) {
-  return status === "verified" || status === "for_inspection" || status === "reopened";
+  return status === "verified";
 }
 
 export function isOpenStatus(status: HazardStatus) {
@@ -121,25 +161,33 @@ export function resolveStatus(
   report: Pick<HazardReport, "status" | "upvotes" | "downvotes">,
 ): HazardStatus {
   if (report.status === "resolved" || report.status === "rejected") return report.status;
-  if (report.downvotes >= REJECT_THRESHOLD && report.downvotes > report.upvotes) {
+  if (report.downvotes - report.upvotes >= REJECT_THRESHOLD) {
     return "rejected";
   }
-  if (report.status === "pending" && report.upvotes >= VERIFY_THRESHOLD) {
+  if (report.status === "pending" && report.upvotes - report.downvotes >= VERIFY_THRESHOLD) {
     return "verified";
   }
   return report.status;
 }
 
 export function applyVote(report: HazardReport, direction: VoteDirection): HazardReport {
+  if (report.status !== "pending") return report;
   const upvotes = report.upvotes + (direction === "up" ? 1 : 0);
   const downvotes = report.downvotes + (direction === "down" ? 1 : 0);
-  const reopened = direction === "up" && report.status === "resolved";
-  const status = resolveStatus({
-    status: reopened ? "reopened" : report.status,
-    upvotes,
-    downvotes,
-  });
+  const status = resolveStatus({ status: report.status, upvotes, downvotes });
   return { ...report, upvotes, downvotes, status };
+}
+
+export function applyResolutionConfirmation(report: HazardReport): HazardReport {
+  if (report.status !== "verified") return report;
+  const resolutionConfirmations = report.resolutionConfirmations + 1;
+  const resolved = resolutionConfirmations >= RESOLVE_THRESHOLD;
+  return {
+    ...report,
+    resolutionConfirmations,
+    status: resolved ? "resolved" : "verified",
+    resolvedAt: resolved ? new Date().toISOString() : report.resolvedAt,
+  };
 }
 
 export function distanceMeters(
@@ -162,7 +210,7 @@ export function findDuplicate(
 ) {
   return reports.find(
     (report) =>
-      isOpenStatus(report.status) &&
+      report.status === "pending" &&
       report.typeId === candidate.typeId &&
       distanceMeters(report, candidate) <= DUPLICATE_RADIUS_METERS,
   );
@@ -173,11 +221,11 @@ export interface LatLngLiteral {
   lng: number;
 }
 
-export const DEFAULT_CENTER: LatLngLiteral = { lat: 14.7751, lng: 121.0448 };
+export const DEFAULT_CENTER: LatLngLiteral = { lat: 14.776, lng: 121.039 };
 
 export const MAP_BOUNDS: [[number, number], [number, number]] = [
-  [14.76, 121.03],
-  [14.79, 121.06],
+  [14.763, 121.023],
+  [14.789, 121.055],
 ];
 
 function seedReport(
@@ -194,50 +242,55 @@ function seedReport(
 }
 
 export function buildSeedReports(now: number): HazardReport[] {
-  return [
-    seedReport("seed-1", 9 * 24, now, {
-      typeId: "pothole", description: "Deep pothole in the right lane, near the school gate.",
-      area: "Barangay 176-A", lat: 14.777, lng: 121.0432, upvotes: 5, downvotes: 0, status: "verified",
-    }),
-    seedReport("seed-2", 24, now, {
-      typeId: "flooded-road", description: "Water pools across the market entrance after rain.",
-      area: "Barangay 176-B", lat: 14.7728, lng: 121.0465, upvotes: 2, downvotes: 1, status: "pending",
-    }),
-    seedReport("seed-3", 3 * 24, now, {
-      typeId: "broken-streetlight", description: "Streetlight near the hall has been off all week.",
-      area: "Barangay 176-C", lat: 14.7762, lng: 121.0471, upvotes: 1, downvotes: 4, status: "rejected",
-    }),
-    seedReport("seed-4", 4 * 24, now, {
-      typeId: "flooded-road", description: "Road dips and floods by the hall gate.",
-      area: "Barangay 176-B", lat: 14.7735, lng: 121.0456, upvotes: 4, downvotes: 0, status: "verified",
-    }),
-    seedReport("seed-5", 6 * 24, now, {
-      typeId: "broken-streetlight", description: "Two poles dark on the corner after dusk.",
-      area: "Barangay 176-C", lat: 14.7781, lng: 121.0479, upvotes: 3, downvotes: 0, status: "verified",
-    }),
-    seedReport("seed-6", 2 * 24, now, {
-      typeId: "fallen-tree", description: "Branch hanging over the footpath after the storm.",
-      area: "Barangay 176-A", lat: 14.7748, lng: 121.0421, upvotes: 3, downvotes: 0, status: "for_inspection",
-    }),
-    seedReport("seed-7", 24, now, {
-      typeId: "open-manhole", description: "Manhole cover missing at the crosswalk.",
-      area: "Barangay 176-D", lat: 14.7712, lng: 121.0438, upvotes: 4, downvotes: 0, status: "verified",
-    }),
-    seedReport("seed-8", 5, now, {
-      typeId: "garbage-blocking", description: "Uncollected bags block half of the road lane.",
-      area: "Barangay 176-D", lat: 14.7719, lng: 121.0459, upvotes: 1, downvotes: 0, status: "pending",
-    }),
-    seedReport("seed-9", 12, now, {
-      typeId: "damaged-sidewalk", description: "Cracked slabs make the sidewalk uneven.",
-      area: "Barangay 176-E", lat: 14.7786, lng: 121.0442, upvotes: 2, downvotes: 0, status: "pending",
-    }),
-    seedReport("seed-10", 8 * 24, now, {
-      typeId: "pothole", description: "Pothole filled by the barangay crew.",
-      area: "Barangay 176-F", lat: 14.7739, lng: 121.0485, upvotes: 3, downvotes: 0, status: "resolved",
-    }),
-    seedReport("seed-11", 2 * 24, now, {
-      typeId: "broken-traffic-sign", description: "Stop sign is bent and facing away from traffic.",
-      area: "Barangay 176-E", lat: 14.7758, lng: 121.0410, upvotes: 4, downvotes: 1, status: "reopened",
-    }),
+  const centers: Record<Area, LatLngLiteral> = {
+    "Barangay 176-A": { lat: 14.7805, lng: 121.045 },
+    "Barangay 176-B": { lat: 14.7695, lng: 121.048 },
+    "Barangay 176-C": { lat: 14.7695, lng: 121.0385 },
+    "Barangay 176-D": { lat: 14.7695, lng: 121.0295 },
+    "Barangay 176-E": { lat: 14.7805, lng: 121.0385 },
+    "Barangay 176-F": { lat: 14.7805, lng: 121.0295 },
+  };
+  const types: HazardTypeId[] = [
+    "pothole", "flooded-road", "garbage-blocking", "broken-streetlight", "pothole",
+    "damaged-sidewalk", "open-manhole", "fallen-tree", "flooded-road", "broken-traffic-sign",
   ];
+  const descriptions: Record<HazardTypeId, string> = {
+    pothole: "Pothole reported along a residential road.",
+    "flooded-road": "Water collects on the road after heavy rain.",
+    "broken-streetlight": "Streetlight is not working after dark.",
+    "fallen-tree": "Fallen branch partly blocks the footpath.",
+    "open-manhole": "Manhole cover appears loose or missing.",
+    "damaged-sidewalk": "Uneven sidewalk may be difficult to pass.",
+    "garbage-blocking": "Uncollected waste narrows the roadside path.",
+    "broken-traffic-sign": "Traffic sign is damaged or difficult to read.",
+    "blocked-pedestrian-lane": "Pedestrian lane is blocked by an obstruction.",
+    other: "Community member reported a street hazard.",
+  };
+  const daysAgo = [1, 3, 5, 7, 9, 12, 16, 20, 23, 27];
+  const statuses: HazardStatus[] = [
+    "pending", "verified", "pending", "rejected", "verified",
+    "pending", "verified", "resolved", "pending", "verified",
+  ];
+
+  return AREAS.flatMap((area, areaIndex) =>
+    types.map((_, index) => {
+      const typeId = types[(index + areaIndex) % types.length];
+      const status = statuses[index];
+      const center = centers[area];
+      const lat = center.lat + ((index % 3) - 1) * 0.0007;
+      const lng = center.lng + ((index % 4) - 1.5) * 0.0007;
+      return seedReport(`mock-${area.slice(-1)}-${index + 1}`, daysAgo[index] * 24, now, {
+        typeId,
+        description: descriptions[typeId],
+        area,
+        lat,
+        lng,
+        upvotes: status === "verified" ? 5 : status === "resolved" ? 4 : status === "rejected" ? 0 : index % 2,
+        downvotes: status === "rejected" ? 3 : status === "verified" ? 1 : 0,
+        resolutionConfirmations: status === "resolved" ? RESOLVE_THRESHOLD : status === "verified" ? index % RESOLVE_THRESHOLD : 0,
+        resolvedAt: status === "resolved" ? new Date(now - 18 * 3600_000).toISOString() : null,
+        status,
+      });
+    }),
+  );
 }

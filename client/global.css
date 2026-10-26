@@ -54,6 +54,36 @@
   }
 }
 
+.area-summary-tooltip {
+  pointer-events: none;
+}
+
+.area-summary-content {
+  color: #17211d;
+  font-family: Manrope, sans-serif;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.area-summary-content p {
+  margin: 3px 0 0;
+}
+
+.barangay-boundary-label {
+  background: transparent;
+  border: 0;
+  pointer-events: none;
+}
+
+.barangay-boundary-label span {
+  border-radius: 9999px;
+  background: rgb(255 255 255 / 90%);
+  color: #17211d;
+  font: 700 10px Manrope, sans-serif;
+  padding: 2px 5px;
+  white-space: nowrap;
+}
+
 @layer base {
   * {
     @apply border-border;

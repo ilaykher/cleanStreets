@@ -3,65 +3,40 @@ import * as L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import {
   COLORS,
+  APPROXIMATE_BOUNDARIES,
+  AREAS,
   DEFAULT_CENTER,
+  findAreaAtLocation,
   MAP_BOUNDS,
-  STATUS_LABEL,
-  formatReportedAt,
-  getHazardType,
   markerColor,
   type HazardReport,
+  type Area,
+  type AreaSummary,
   type LatLngLiteral,
-  type VoteDirection,
 } from "@/lib/hazards";
 
 interface HazardMapProps {
   reports: HazardReport[];
-  myVotes: Record<string, VoteDirection>;
-  onVote: (reportId: string, direction: VoteDirection) => void;
+  areaSummaries: Record<Area, AreaSummary>;
+  onSelectReport: (reportId: string) => void;
   pickMode: boolean;
   pickedLocation: LatLngLiteral | null;
   onPickLocation: (location: LatLngLiteral) => void;
+  onInvalidPick: () => void;
 }
 
-function buildPopupContent(
-  report: HazardReport,
-  myVote: VoteDirection | undefined,
-  onVote: (reportId: string, direction: VoteDirection) => void,
-) {
+function buildAreaSummary(summary: AreaSummary, area: Area) {
   const root = document.createElement("div");
-  root.className = "w-[240px] font-sans text-slate-900";
-
-  const addText = (className: string, text: string) => {
-    const el = document.createElement("p");
-    el.className = className;
-    el.textContent = text;
-    root.appendChild(el);
-  };
-
-  addText("text-[11px] font-bold uppercase tracking-wide text-slate-500", getHazardType(report.typeId).label);
-  addText("mt-1 text-sm font-semibold leading-snug", report.description);
-  addText("mt-1 text-xs text-slate-500", `${report.area} · ${formatReportedAt(report.createdAt)}`);
-  addText("mt-2 text-xs font-bold text-slate-800", `Status: ${STATUS_LABEL[report.status]}`);
-  addText("text-xs text-slate-600", `Upvotes ${report.upvotes} · Downvotes ${report.downvotes}`);
-
-  const row = document.createElement("div");
-  row.className = "mt-3 flex gap-2";
-  const votingClosed = Boolean(myVote) || report.status === "rejected";
-
-  (["up", "down"] as const).forEach((direction) => {
-    const button = document.createElement("button");
-    button.type = "button";
-    button.disabled = votingClosed;
-    button.textContent = direction === "up" ? "Upvote" : "Downvote";
-    button.className =
-      "h-8 flex-1 rounded-md border text-xs font-semibold transition-colors disabled:cursor-not-allowed disabled:opacity-50 " +
-      (direction === "up"
-        ? "border-emerald-300 text-emerald-800 hover:bg-emerald-50"
-        : "border-rose-300 text-rose-800 hover:bg-rose-50");
-    button.addEventListener("click", () => onVote(report.id, direction));
-    row.appendChild(button);
-  });
-  root.appendChild(row);
+  root.className = "area-summary-content";
+  const title = document.createElement("strong");
+  title.textContent = area;
+  root.appendChild(title);
+  const detail = document.createElement("p");
+  detail.textContent = `${summary.total} hazards · ${summary.pending} pending · ${summary.verified} verified · ${summary.resolved} resolved`;
+  root.appendChild(detail);
+  const common = document.createElement("p");
+  common.textContent = `Most reported: ${summary.mostCommon}`;
+  root.appendChild(common);
   return root;
 }
 
@@ -81,8 +56,6 @@ export function MapLegend() {
     { color: COLORS.moderate, label: "Moderate" },
     { color: COLORS.minor, label: "Minor" },
     { color: COLORS.pending, label: "Pending verification" },
-    { color: COLORS.resolved, label: "Resolved" },
-    { color: COLORS.rejected, label: "Rejected (faded)" },
   ];
   return (
     <ul className="flex flex-wrap gap-x-4 gap-y-2 text-xs font-semibold text-muted-foreground">
@@ -98,28 +71,28 @@ export function MapLegend() {
 
 export default function HazardMap({
   reports,
-  myVotes,
-  onVote,
+  areaSummaries,
+  onSelectReport,
   pickMode,
   pickedLocation,
   onPickLocation,
+  onInvalidPick,
 }: HazardMapProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<L.Map | null>(null);
   const markersRef = useRef(new Map<string, L.CircleMarker>());
   const pickedMarkerRef = useRef<L.CircleMarker | null>(null);
-  const openReportIdRef = useRef<string | null>(null);
 
-  const reportsRef = useRef(reports);
-  const myVotesRef = useRef(myVotes);
-  const onVoteRef = useRef(onVote);
+  const areaSummariesRef = useRef(areaSummaries);
+  const onSelectReportRef = useRef(onSelectReport);
   const pickModeRef = useRef(pickMode);
   const onPickRef = useRef(onPickLocation);
-  reportsRef.current = reports;
-  myVotesRef.current = myVotes;
-  onVoteRef.current = onVote;
+  const onInvalidPickRef = useRef(onInvalidPick);
+  areaSummariesRef.current = areaSummaries;
+  onSelectReportRef.current = onSelectReport;
   pickModeRef.current = pickMode;
   onPickRef.current = onPickLocation;
+  onInvalidPickRef.current = onInvalidPick;
 
   useEffect(() => {
     if (!containerRef.current) return;
@@ -137,17 +110,52 @@ export default function HazardMap({
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     }).addTo(map);
 
-    map.on("click", (event) => {
-      if (pickModeRef.current) {
-        onPickRef.current({ lat: event.latlng.lat, lng: event.latlng.lng });
-      } else {
-        map.closePopup();
-      }
-    });
-    map.on("popupclose", () => {
-      openReportIdRef.current = null;
+    AREAS.forEach((area) => {
+      const boundary = APPROXIMATE_BOUNDARIES[area];
+      L.polygon(boundary.map(({ lat, lng }) => [lat, lng] as L.LatLngExpression), {
+        color: "#527568",
+        weight: 1.5,
+        fillColor: "#087f5b",
+        fillOpacity: 0.025,
+        interactive: false,
+      }).addTo(map);
+      const center = boundary.reduce(
+        (point, item) => ({ lat: point.lat + item.lat / boundary.length, lng: point.lng + item.lng / boundary.length }),
+        { lat: 0, lng: 0 },
+      );
+      L.marker([center.lat, center.lng], {
+        interactive: false,
+        icon: L.divIcon({
+          className: "barangay-boundary-label",
+          html: `<span>${area.replace("Barangay ", "")}</span>`,
+          iconSize: [48, 20],
+        }),
+      }).addTo(map);
     });
 
+    const areaTooltip = L.tooltip({
+      direction: "top",
+      offset: [0, -6],
+      opacity: 0.98,
+      interactive: false,
+      className: "area-summary-tooltip",
+    });
+    map.on("mousemove", (event) => {
+      const area = findAreaAtLocation(event.latlng);
+      const summary = area ? areaSummariesRef.current[area] : null;
+      if (!area || !summary) {
+        areaTooltip.remove();
+        return;
+      }
+      areaTooltip.setLatLng(event.latlng).setContent(buildAreaSummary(summary, area)).addTo(map);
+    });
+    map.getContainer().addEventListener("mouseleave", () => areaTooltip.remove());
+
+    map.on("click", (event) => {
+      if (pickModeRef.current) {
+        handleLocationPick(event.latlng);
+      }
+    });
     mapRef.current = map;
     return () => {
       map.remove();
@@ -170,8 +178,11 @@ export default function HazardMap({
         return;
       }
       const marker = L.circleMarker([report.lat, report.lng], reportMarkerStyle(report)).addTo(map);
-      marker.bindPopup("", { minWidth: 240 });
-      marker.on("click", () => openReport(report.id));
+      marker.on("click", (event: L.LeafletMouseEvent) => {
+        if (pickModeRef.current) {
+          handleLocationPick(event.latlng);
+        } else onSelectReportRef.current(report.id);
+      });
       markersRef.current.set(report.id, marker);
     });
 
@@ -181,8 +192,7 @@ export default function HazardMap({
       markersRef.current.delete(id);
     });
 
-    refreshOpenReport();
-  }, [reports, myVotes]);
+  }, [reports]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -196,6 +206,7 @@ export default function HazardMap({
       weight: 3,
       fillColor: COLORS.picked,
       fillOpacity: 1,
+      interactive: false,
     }).addTo(map);
     map.panTo([pickedLocation.lat, pickedLocation.lng]);
   }, [pickedLocation]);
@@ -205,29 +216,12 @@ export default function HazardMap({
     if (container) container.style.cursor = pickMode ? "crosshair" : "";
   }, [pickMode]);
 
-  function openReport(reportId: string) {
-    const map = mapRef.current;
-    const marker = markersRef.current.get(reportId);
-    const report = reportsRef.current.find((item) => item.id === reportId);
-    if (!map || !marker || !report) return;
-
-    openReportIdRef.current = reportId;
-    marker.setPopupContent(buildPopupContent(report, myVotesRef.current[reportId], onVoteRef.current));
-    marker.openPopup();
-  }
-
-  function refreshOpenReport() {
-    const map = mapRef.current;
-    const openId = openReportIdRef.current;
-    if (!map || !openId) return;
-    const marker = markersRef.current.get(openId);
-    const report = reportsRef.current.find((item) => item.id === openId);
-    if (!marker || !report) {
-      map.closePopup();
-      openReportIdRef.current = null;
+  function handleLocationPick(location: LatLngLiteral) {
+    if (findAreaAtLocation(location)) {
+      onPickRef.current(location);
       return;
     }
-    marker.setPopupContent(buildPopupContent(report, myVotesRef.current[openId], onVoteRef.current));
+    onInvalidPickRef.current();
   }
 
   return <div ref={containerRef} className="h-full min-h-[420px] w-full" />;
