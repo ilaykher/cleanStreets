@@ -101,10 +101,6 @@ function barangayCounts(area: Area, reports: HazardReport[]) {
   return { counts, open };
 }
 
-function barangayLabel(area: Area, open: number) {
-  return `${area.replace("Barangay ", "")} · ${open} open`;
-}
-
 function buildBarangayPopup(area: Area, reports: HazardReport[]) {
   const { counts, open } = barangayCounts(area, reports);
   const root = document.createElement("div");
@@ -156,11 +152,10 @@ function reportMarkerStyle(report: HazardReport): L.CircleMarkerOptions {
 
 export function MapLegend() {
   const items = [
-    { color: COLORS.high, label: "Emergency" },
-    { color: COLORS.moderate, label: "Moderate" },
-    { color: COLORS.minor, label: "Minor" },
+    { color: COLORS.high, label: "Verified: high severity" },
+    { color: COLORS.moderate, label: "Verified: moderate severity" },
+    { color: COLORS.minor, label: "Verified: minor severity" },
     { color: COLORS.pending, label: "Pending verification" },
-    { color: COLORS.rejected, label: "Rejected (faded)" },
   ];
   return (
     <ul className="flex flex-wrap gap-x-4 gap-y-2 text-xs font-semibold text-muted-foreground">
@@ -170,6 +165,12 @@ export function MapLegend() {
           {item.label}
         </li>
       ))}
+      <li className="flex items-center gap-1.5">
+        <span className="h-3 w-4 border border-dashed border-emerald-700" aria-hidden="true" />
+        Barangay outline (hover for counts)
+      </li>
+      <li>Resolved hazards are removed from the public map.</li>
+      <li>Rejected reports are hidden from the public map.</li>
     </ul>
   );
 }
@@ -233,16 +234,17 @@ export default function HazardMap({
           fillColor: COLORS.picked,
           fillOpacity: 0.06,
           interactive: true,
-          bubblingMouseEvents: false,
+          bubblingMouseEvents: true,
         },
       );
-      polygon.bindPopup(buildBarangayPopup(area, []));
-      polygon.on("click", (event) => {
-        L.DomEvent.stopPropagation(event);
-        if (pickModeRef.current) onPickRef.current({ lat: event.latlng.lat, lng: event.latlng.lng });
+      polygon.bindTooltip(buildBarangayPopup(area, []), {
+        direction: "top",
+        sticky: true,
+        opacity: 1,
+        className: "barangay-label",
       });
-      polygon.on("mouseover", () => polygon.openPopup());
-      polygon.on("mouseout", () => polygon.closePopup());
+      polygon.on("mouseover", () => { if (!openReportIdRef.current) polygon.openTooltip(); });
+      polygon.on("mouseout", () => polygon.closeTooltip());
       polygon.addTo(map);
       return { area, polygon };
     });
@@ -250,8 +252,6 @@ export default function HazardMap({
     map.on("click", (event) => {
       if (pickModeRef.current) {
         onPickRef.current({ lat: event.latlng.lat, lng: event.latlng.lng });
-      } else {
-        map.closePopup();
       }
     });
     map.on("popupclose", () => {
@@ -273,7 +273,7 @@ export default function HazardMap({
     if (!map) return;
 
     const seen = new Set<string>();
-    reports.forEach((report) => {
+    reports.filter((report) => report.status === "pending" || report.status === "verified").forEach((report) => {
       seen.add(report.id);
       const existing = markersRef.current.get(report.id);
       if (existing) {
@@ -304,7 +304,7 @@ export default function HazardMap({
     });
 
     barangayLayersRef.current.forEach(({ area, polygon }) => {
-      polygon.setPopupContent(buildBarangayPopup(area, reports));
+      polygon.setTooltipContent(buildBarangayPopup(area, reports));
     });
 
     refreshOpenReport();

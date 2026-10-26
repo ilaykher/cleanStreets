@@ -23,5 +23,7 @@ describe("buildMockReports", () => {
     expect(reports.filter((report) => report.status === "pending")).toHaveLength(40);
     expect(reports.filter((report) => report.status === "verified")).toHaveLength(40);
     expect(reports.filter((report) => report.status === "resolved")).toHaveLength(20);
+    expect(reports.filter((report) => report.status === "pending").every((report) => report.upvotes === 2 && report.downvotes === 2)).toBe(true);
+    expect(reports.filter((report) => report.status === "verified").every((report) => report.resolutionConfirms === 2)).toBe(true);
   });
 });

@@ -18,6 +18,7 @@ export function ReportForm({ location, onSubmitted, onCancel }: ReportFormProps)
   const [typeId, setTypeId] = useState<HazardTypeId>("pothole");
   const [description, setDescription] = useState("");
   const [duplicateId, setDuplicateId] = useState<string | null>(null);
+  const [voteNotice, setVoteNotice] = useState<string | null>(null);
 
   const area = location ? barangayAt(location) : null;
   const canSubmit = Boolean(area) && description.trim().length >= 8;
@@ -31,9 +32,10 @@ export function ReportForm({ location, onSubmitted, onCancel }: ReportFormProps)
       lat: location.lat,
       lng: location.lng,
     }, reportAnyway);
-    if (result.duplicateId) { setDuplicateId(result.duplicateId); return; }
+    if (result.duplicateId) { setDuplicateId(result.duplicateId); setVoteNotice(null); return; }
     setDescription("");
     setDuplicateId(null);
+    setVoteNotice(null);
     onSubmitted({ merged: false });
   }
 
@@ -100,8 +102,9 @@ export function ReportForm({ location, onSubmitted, onCancel }: ReportFormProps)
       {duplicateId && (
         <div role="alert" className="space-y-3 rounded-xl border border-amber-300 bg-amber-50 p-3 text-sm text-amber-950">
           <p>A similar hazard was reported nearby. Do you want to upvote the existing report instead?</p>
+          {voteNotice && <p>{voteNotice}</p>}
           <div className="flex flex-wrap gap-2">
-            <Button type="button" onClick={() => { castVote(duplicateId, "up"); onSubmitted({ merged: true }); }}>
+            <Button type="button" onClick={() => { if (castVote(duplicateId, "up")) onSubmitted({ merged: true }); else setVoteNotice("You have already voted on this report. Choose Report anyway to submit a separate report."); }}>
               Upvote existing report
             </Button>
             <Button type="button" variant="outline" onClick={() => createReport(true)}>Report anyway</Button>

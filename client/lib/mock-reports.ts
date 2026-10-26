@@ -35,8 +35,8 @@ export function buildMockReports(now = Date.now(), random = Math.random): Hazard
     const area = AREAS[areaIndex];
     const typeId = HAZARD_TYPES[Math.floor(random() * HAZARD_TYPES.length)].id;
     const status = (["pending", "verified", "resolved"] as const)[index % 10 < 4 ? 0 : index % 10 < 8 ? 1 : 2];
-    const upvotes = status === "pending" ? Math.floor(random() * 3) : 3 + Math.floor(random() * 5);
-    const downvotes = status === "pending" ? Math.floor(random() * 2) : Math.floor(random() * (upvotes - 2));
+    const upvotes = status === "pending" ? 2 : 3 + Math.floor(random() * 5);
+    const downvotes = status === "pending" ? 2 : Math.floor(random() * (upvotes - 2));
     const createdAt = new Date(now - Math.floor(random() * 21) * 86_400_000 - Math.floor(random() * 86_400_000)).toISOString();
 
     return {
@@ -49,7 +49,7 @@ export function buildMockReports(now = Date.now(), random = Math.random): Hazard
       upvotes,
       downvotes,
       status,
-      ...(status === "resolved" ? { resolutionConfirms: 3 } : {}),
+      ...(status === "resolved" ? { resolutionConfirms: 3 } : status === "verified" ? { resolutionConfirms: 2 } : {}),
     };
   });
 }

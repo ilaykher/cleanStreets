@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CountMinSketch } from "./count-min-sketch";
 import { barangayAt } from "./barangay-boundaries";
-import { AREAS, applyVote, findDuplicate, type HazardReport } from "./hazards";
+import { AREAS, applyVote, filterReports, findDuplicate, type HazardReport } from "./hazards";
 import { BARANGAY_BOUNDARIES } from "./barangay-boundaries";
 
 const base: HazardReport = {
@@ -34,6 +34,12 @@ describe("applyVote", () => {
     expect(report.status).toBe("pending");
   });
 
+  it("requires three net downvotes, not just three total downvotes", () => {
+    const balanced = { ...base, upvotes: 2, downvotes: 2 };
+    expect(applyVote(balanced, "down").status).toBe("pending");
+    expect(applyVote({ ...balanced, downvotes: 4 }, "down").status).toBe("rejected");
+  });
+
 });
 
 describe("findDuplicate", () => {
@@ -47,6 +53,24 @@ describe("findDuplicate", () => {
     const open = { ...base, status: "verified" as const };
     expect(findDuplicate([open], { typeId: "flooded-road", lat: 14.6, lng: 120.98 })).toBeUndefined();
     expect(findDuplicate([open], { typeId: "pothole", lat: 14.61, lng: 120.98 })).toBeUndefined();
+  });
+
+  it("prioritizes verified and better-supported reports, then proximity", () => {
+    const near = { ...base, id: "near", lat: 14.60001, lng: 120.98001 };
+    const verified = { ...base, id: "verified", status: "verified" as const, upvotes: 4, lat: 14.6002, lng: 120.9802 };
+    expect(findDuplicate([near, verified], { typeId: "pothole", lat: 14.6, lng: 120.98 })?.id).toBe("verified");
+    const farther = { ...base, id: "farther", lat: 14.6002, lng: 120.9802 };
+    expect(findDuplicate([farther, near], { typeId: "pothole", lat: 14.6, lng: 120.98 })?.id).toBe("near");
+  });
+});
+
+describe("filterReports", () => {
+  it("combines type, status, and severity without changing the source records", () => {
+    const verified = { ...base, status: "verified" as const, typeId: "pothole" as const };
+    const pending = { ...base, id: "r2", status: "pending" as const, typeId: "flooded-road" as const };
+    const source = [verified, pending];
+    expect(filterReports(source, { typeId: "pothole", status: "verified", severity: "moderate" })).toEqual([verified]);
+    expect(source).toHaveLength(2);
   });
 });
 

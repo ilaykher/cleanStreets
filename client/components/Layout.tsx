@@ -33,7 +33,7 @@ export default function Layout() {
       </header>
       <main className="flex-1"><Outlet /></main>
       <footer className="border-t border-border/70 bg-card">
-        <div className="mx-auto max-w-7xl px-5 py-6 text-sm text-muted-foreground"><span className="font-bold text-foreground">CleanStreets</span> · A community hazard map for Bagong Silang, North Caloocan City.</div>
+        <div className="mx-auto max-w-7xl px-5 py-6 text-sm text-muted-foreground"><span className="font-bold text-foreground">CleanStreets</span><span className="ml-2">A community hazard map for Bagong Silang, North Caloocan City.</span></div>
       </footer>
     </div>
   );

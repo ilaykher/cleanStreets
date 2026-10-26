@@ -2,9 +2,14 @@ import { useState } from "react";
 import { CheckCircle2, MapPin, Plus, X } from "lucide-react";
 import HazardMap, { MapLegend } from "@/components/hazards/HazardMap";
 import { ReportForm } from "@/components/hazards/ReportForm";
-import { castVote, confirmResolved, useHazardState } from "@/lib/hazard-store";
+import { castVote, confirmResolved, setHazardFilters, useHazardState } from "@/lib/hazard-store";
 import {
+  HAZARD_STATUSES,
+  HAZARD_TYPES,
+  SEVERITIES,
+  SEVERITY_LABEL,
   VERIFY_THRESHOLD,
+  filterReports,
   type LatLngLiteral,
   type VoteDirection,
   getHazardType,
@@ -14,17 +19,18 @@ import { barangayAt } from "@/lib/barangay-boundaries";
 
 
 export default function Index() {
-  const { reports, myVotes, myResolutions } = useHazardState();
+  const { reports, myVotes, myResolutions, filters } = useHazardState();
   const [pickMode, setPickMode] = useState(false);
   const [pickedLocation, setPickedLocation] = useState<LatLngLiteral | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
   const [selectedReportRequest, setSelectedReportRequest] = useState(0);
 
-  const verifiedCount = reports.filter((report) => report.status === "verified").length;
-  const pendingCount = reports.filter((report) => report.status === "pending").length;
-  const resolvedCount = reports.filter((report) => report.status === "resolved").length;
-  const publicReports = reports.filter((report) =>
+  const filteredReports = filterReports(reports, filters);
+  const verifiedCount = filteredReports.filter((report) => report.status === "verified").length;
+  const pendingCount = filteredReports.filter((report) => report.status === "pending").length;
+  const resolvedCount = filteredReports.filter((report) => report.status === "resolved").length;
+  const publicReports = filteredReports.filter((report) =>
     (report.status === "pending" || report.status === "verified") && barangayAt(report) === report.area,
   );
 
@@ -117,7 +123,7 @@ export default function Index() {
           </div>
           <div className="relative h-[520px] sm:h-[600px] lg:h-[680px]">
             <HazardMap
-              reports={publicReports}
+              reports={filteredReports.filter((report) => barangayAt(report) === report.area)}
               myVotes={myVotes}
               onVote={handleVote}
               onResolve={(id) => confirmResolved(id)}
@@ -145,8 +151,19 @@ export default function Index() {
             <div className="border-b border-border p-5">
               <h2 className="text-xl font-extrabold tracking-tight">Hazard reports</h2>
               <p className="mt-1 text-sm text-muted-foreground">{publicReports.length} active reports · Select one to view it on the map.</p>
+              <div className="mt-3 grid grid-cols-3 gap-2">
+                <select aria-label="Filter hazard type" className="h-9 min-w-0 rounded-md border border-input bg-background px-2 text-xs" value={filters.typeId} onChange={(event) => setHazardFilters({ ...filters, typeId: event.target.value as typeof filters.typeId })}>
+                  <option value="all">All types</option>{HAZARD_TYPES.map((type) => <option key={type.id} value={type.id}>{type.label}</option>)}
+                </select>
+                <select aria-label="Filter hazard status" className="h-9 min-w-0 rounded-md border border-input bg-background px-2 text-xs" value={filters.status} onChange={(event) => setHazardFilters({ ...filters, status: event.target.value as typeof filters.status })}>
+                  <option value="all">All statuses</option>{HAZARD_STATUSES.map((status) => <option key={status} value={status}>{status[0].toUpperCase() + status.slice(1)}</option>)}
+                </select>
+                <select aria-label="Filter hazard severity" className="h-9 min-w-0 rounded-md border border-input bg-background px-2 text-xs" value={filters.severity} onChange={(event) => setHazardFilters({ ...filters, severity: event.target.value as typeof filters.severity })}>
+                  <option value="all">All severity</option>{SEVERITIES.map((severity) => <option key={severity} value={severity}>{SEVERITY_LABEL[severity]}</option>)}
+                </select>
+              </div>
             </div>
-            <ul aria-label="Active hazard reports" className="max-h-[470px] divide-y divide-border overflow-y-auto lg:h-[calc(736px-5.5rem)] lg:max-h-none">
+            <ul aria-label="Active hazard reports" className="max-h-[410px] divide-y divide-border overflow-y-auto lg:h-[calc(736px-9rem)] lg:max-h-none">
               {publicReports.map((report) => <li key={report.id}>
                 <button type="button" onClick={() => openReport(report.id)} className="w-full p-4 text-left transition-colors hover:bg-muted/60 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring">
                   <span className="flex items-center justify-between gap-2">

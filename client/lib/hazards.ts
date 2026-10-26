@@ -44,6 +44,12 @@ export interface HazardType {
 
 export const HAZARD_STATUSES = ["pending", "verified", "rejected", "resolved"] as const;
 export type HazardStatus = (typeof HAZARD_STATUSES)[number];
+export type HazardFilters = {
+  typeId: HazardTypeId | "all";
+  status: HazardStatus | "all";
+  severity: Severity | "all";
+};
+export const DEFAULT_HAZARD_FILTERS: HazardFilters = { typeId: "all", status: "all", severity: "all" };
 
 export const STATUS_LABEL: Record<HazardStatus, string> = {
   pending: "Pending verification",
@@ -93,6 +99,14 @@ export function getHazardType(id: HazardTypeId): HazardType {
   return type;
 }
 
+export function filterReports(reports: HazardReport[], filters: HazardFilters) {
+  return reports.filter((report) =>
+    (filters.typeId === "all" || report.typeId === filters.typeId) &&
+    (filters.status === "all" || report.status === filters.status) &&
+    (filters.severity === "all" || getHazardType(report.typeId).severity === filters.severity),
+  );
+}
+
 export function isOpenStatus(status: HazardStatus) {
   return status === "pending" || status === "verified";
 }
@@ -137,12 +151,16 @@ export function findDuplicate(
   reports: HazardReport[],
   candidate: Pick<HazardReport, "typeId" | "lat" | "lng">,
 ) {
-  return reports.find(
-    (report) =>
+  return reports
+    .filter((report) =>
       isOpenStatus(report.status) &&
       report.typeId === candidate.typeId &&
       distanceMeters(report, candidate) <= DUPLICATE_RADIUS_METERS,
-  );
+    )
+    .sort((a, b) => {
+      const score = (report: HazardReport) => (report.status === "verified" ? VERIFY_THRESHOLD : 0) + report.upvotes - report.downvotes;
+      return score(b) - score(a) || distanceMeters(a, candidate) - distanceMeters(b, candidate);
+    })[0];
 }
 
 export interface LatLngLiteral {
