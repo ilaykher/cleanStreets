@@ -1,43 +1,24 @@
 import { useEffect, useRef } from "react";
 import * as L from "leaflet";
 import "leaflet/dist/leaflet.css";
+import { BAGONG_SILANG_OUTLINE } from "@/lib/barangay-boundaries";
 import {
   COLORS,
-  APPROXIMATE_BOUNDARIES,
-  AREAS,
   DEFAULT_CENTER,
   findAreaAtLocation,
   MAP_BOUNDS,
   markerColor,
   type HazardReport,
-  type Area,
-  type AreaSummary,
   type LatLngLiteral,
 } from "@/lib/hazards";
 
 interface HazardMapProps {
   reports: HazardReport[];
-  areaSummaries: Record<Area, AreaSummary>;
   onSelectReport: (reportId: string) => void;
   pickMode: boolean;
   pickedLocation: LatLngLiteral | null;
   onPickLocation: (location: LatLngLiteral) => void;
   onInvalidPick: () => void;
-}
-
-function buildAreaSummary(summary: AreaSummary, area: Area) {
-  const root = document.createElement("div");
-  root.className = "area-summary-content";
-  const title = document.createElement("strong");
-  title.textContent = area;
-  root.appendChild(title);
-  const detail = document.createElement("p");
-  detail.textContent = `${summary.total} hazards · ${summary.pending} pending · ${summary.verified} verified · ${summary.resolved} resolved`;
-  root.appendChild(detail);
-  const common = document.createElement("p");
-  common.textContent = `Most reported: ${summary.mostCommon}`;
-  root.appendChild(common);
-  return root;
 }
 
 function reportMarkerStyle(report: HazardReport): L.CircleMarkerOptions {
@@ -71,7 +52,6 @@ export function MapLegend() {
 
 export default function HazardMap({
   reports,
-  areaSummaries,
   onSelectReport,
   pickMode,
   pickedLocation,
@@ -83,12 +63,10 @@ export default function HazardMap({
   const markersRef = useRef(new Map<string, L.CircleMarker>());
   const pickedMarkerRef = useRef<L.CircleMarker | null>(null);
 
-  const areaSummariesRef = useRef(areaSummaries);
   const onSelectReportRef = useRef(onSelectReport);
   const pickModeRef = useRef(pickMode);
   const onPickRef = useRef(onPickLocation);
   const onInvalidPickRef = useRef(onInvalidPick);
-  areaSummariesRef.current = areaSummaries;
   onSelectReportRef.current = onSelectReport;
   pickModeRef.current = pickMode;
   onPickRef.current = onPickLocation;
@@ -110,46 +88,14 @@ export default function HazardMap({
       attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
     }).addTo(map);
 
-    AREAS.forEach((area) => {
-      const boundary = APPROXIMATE_BOUNDARIES[area];
-      L.polygon(boundary.map(({ lat, lng }) => [lat, lng] as L.LatLngExpression), {
-        color: "#527568",
-        weight: 1.5,
-        fillColor: "#087f5b",
-        fillOpacity: 0.025,
-        interactive: false,
-      }).addTo(map);
-      const center = boundary.reduce(
-        (point, item) => ({ lat: point.lat + item.lat / boundary.length, lng: point.lng + item.lng / boundary.length }),
-        { lat: 0, lng: 0 },
-      );
-      L.marker([center.lat, center.lng], {
-        interactive: false,
-        icon: L.divIcon({
-          className: "barangay-boundary-label",
-          html: `<span>${area.replace("Barangay ", "")}</span>`,
-          iconSize: [48, 20],
-        }),
-      }).addTo(map);
-    });
-
-    const areaTooltip = L.tooltip({
-      direction: "top",
-      offset: [0, -6],
-      opacity: 0.98,
+    L.polygon(BAGONG_SILANG_OUTLINE.map(([lng, lat]) => [lat, lng] as L.LatLngExpression), {
+      color: "#008080",
+      dashArray: "5, 5",
+      weight: 2,
+      fillColor: "#087f5b",
+      fillOpacity: 0.035,
       interactive: false,
-      className: "area-summary-tooltip",
-    });
-    map.on("mousemove", (event) => {
-      const area = findAreaAtLocation(event.latlng);
-      const summary = area ? areaSummariesRef.current[area] : null;
-      if (!area || !summary) {
-        areaTooltip.remove();
-        return;
-      }
-      areaTooltip.setLatLng(event.latlng).setContent(buildAreaSummary(summary, area)).addTo(map);
-    });
-    map.getContainer().addEventListener("mouseleave", () => areaTooltip.remove());
+    }).addTo(map);
 
     map.on("click", (event) => {
       if (pickModeRef.current) {

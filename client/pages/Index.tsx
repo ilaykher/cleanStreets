@@ -15,7 +15,6 @@ import {
   BOUNDARY_NOTE,
   isActiveStatus,
   type Area,
-  type AreaSummary,
   type HazardReport,
   type LatLngLiteral,
   type HazardTypeId,
@@ -42,20 +41,6 @@ export default function Index() {
   const [pickError, setPickError] = useState<string | null>(null);
   const [detailsId, setDetailsId] = useState<string | null>(null);
   const detailsReport = reports.find((report) => report.id === detailsId) ?? null;
-
-  const areaSummaries = useMemo(() => Object.fromEntries(AREAS.map((area) => {
-    const inArea = reports.filter((report) => report.area === area);
-    const typeCounts = new Map<HazardTypeId, number>();
-    inArea.forEach((report) => typeCounts.set(report.typeId, (typeCounts.get(report.typeId) ?? 0) + 1));
-    const [mostCommon] = [...typeCounts.entries()].sort((a, b) => b[1] - a[1]);
-    return [area, {
-      total: inArea.length,
-      pending: inArea.filter((report) => report.status === "pending").length,
-      verified: inArea.filter((report) => report.status === "verified").length,
-      resolved: inArea.filter((report) => report.status === "resolved").length,
-      mostCommon: mostCommon ? getHazardType(mostCommon[0]).label : "None yet",
-    } satisfies AreaSummary];
-  })) as Record<Area, AreaSummary>, [reports]);
 
   const matchesFilters = (report: HazardReport) =>
     (typeFilter === "all" || report.typeId === typeFilter) &&
@@ -197,7 +182,6 @@ export default function Index() {
           <div className="relative h-[520px] sm:h-[600px] lg:h-[680px]">
             <HazardMap
               reports={mapReports}
-              areaSummaries={areaSummaries}
               onSelectReport={setDetailsId}
               pickMode={pickMode}
               pickedLocation={pickedLocation}
@@ -206,7 +190,7 @@ export default function Index() {
             />
             {pickMode && !pickedLocation && (
               <div role="status" className="pointer-events-none absolute left-4 top-4 max-w-[calc(100%-2rem)] rounded-xl bg-foreground px-4 py-2 text-sm font-semibold text-background shadow-card">
-                {pickError ?? "Click inside one of the outlined barangays to place your pin."}
+                {pickError ?? "Click inside the outlined Bagong Silang area to place your pin."}
               </div>
             )}
           </div>
@@ -232,7 +216,7 @@ export default function Index() {
             <div className="p-5">
               <h2 className="text-xl font-extrabold tracking-tight">Choose a location</h2>
               <p className="mt-1 text-sm text-muted-foreground">
-                The report form opens after you place a valid pin inside one of the outlined barangays.
+                The report form opens after you place a valid pin inside Bagong Silang.
               </p>
             </div>
           ) : (

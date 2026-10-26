@@ -71,7 +71,8 @@ export const COLORS = {
   picked: "#0B7A5C",
 } as const;
 
-export const BOUNDARY_NOTE = "Approximate OpenStreetMap-informed mock boundaries for demonstration only; not official barangay limits.";
+export const BOUNDARY_NOTE = "Approximate Bagong Silang outline for demonstration only; six barangay detection areas are hidden and are not official boundaries.";
+// These six barangay polygons are data-only; the map renders the single overall outline.
 export const APPROXIMATE_BOUNDARIES: Record<Area, LatLngLiteral[]> = Object.fromEntries(
   BARANGAY_BOUNDARIES.map(({ area, coordinates }) => [
     area,
@@ -99,14 +100,6 @@ export function findAreaAtLocation(point: LatLngLiteral): Area | null {
     if (inside) return area;
   }
   return null;
-}
-
-export interface AreaSummary {
-  total: number;
-  pending: number;
-  verified: number;
-  resolved: number;
-  mostCommon: string;
 }
 
 export function formatReportedAt(iso: string) {
@@ -243,12 +236,12 @@ function seedReport(
 
 export function buildSeedReports(now: number): HazardReport[] {
   const centers: Record<Area, LatLngLiteral> = {
-    "Barangay 176-A": { lat: 14.7805, lng: 121.045 },
+    "Barangay 176-A": { lat: 14.77542, lng: 121.04416 },
     "Barangay 176-B": { lat: 14.7695, lng: 121.048 },
     "Barangay 176-C": { lat: 14.7695, lng: 121.0385 },
     "Barangay 176-D": { lat: 14.7695, lng: 121.0295 },
-    "Barangay 176-E": { lat: 14.7805, lng: 121.0385 },
-    "Barangay 176-F": { lat: 14.7805, lng: 121.0295 },
+    "Barangay 176-E": { lat: 14.77869, lng: 121.03704 },
+    "Barangay 176-F": { lat: 14.77837, lng: 121.03012 },
   };
   const types: HazardTypeId[] = [
     "pothole", "flooded-road", "garbage-blocking", "broken-streetlight", "pothole",

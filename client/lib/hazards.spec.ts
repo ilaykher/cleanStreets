@@ -49,12 +49,12 @@ describe("applyVote", () => {
 describe("approximate barangay polygons", () => {
   it("detects locations in all six demonstration areas and rejects points outside them", () => {
     const centers = [
-      { lat: 14.7805, lng: 121.045 },
+      { lat: 14.77542, lng: 121.04416 },
       { lat: 14.7695, lng: 121.048 },
       { lat: 14.7695, lng: 121.0385 },
       { lat: 14.7695, lng: 121.0295 },
-      { lat: 14.7805, lng: 121.0385 },
-      { lat: 14.7805, lng: 121.0295 },
+      { lat: 14.77869, lng: 121.03704 },
+      { lat: 14.77837, lng: 121.03012 },
     ];
     expect(centers.map(findAreaAtLocation)).toEqual(AREAS);
     expect(findAreaAtLocation({ lat: 14.78, lng: 121.055 })).toBeNull();
