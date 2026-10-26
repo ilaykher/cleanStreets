@@ -111,16 +111,20 @@ export function confirmResolved(reportId: string): boolean {
 }
 
 export function castVote(reportId: string, direction: VoteDirection): boolean {
-  if (state.myVotes[reportId]) return false;
   const target = state.reports.find((report) => report.id === reportId);
   if (!target || target.status === "rejected" || target.status === "resolved") return false;
 
+  const reports = state.reports.flatMap((report) => {
+    if (report.id !== reportId) return [report];
+    const voted = applyVote(report, direction);
+    return voted.status === "rejected" ? [] : [voted];
+  });
   update({
     ...state,
-    reports: state.reports.map((report) =>
-      report.id === reportId ? applyVote(report, direction) : report,
-    ),
-    myVotes: { ...state.myVotes, [reportId]: direction },
+    reports,
+    myVotes: reports.some((report) => report.id === reportId)
+      ? { ...state.myVotes, [reportId]: direction }
+      : Object.fromEntries(Object.entries(state.myVotes).filter(([id]) => id !== reportId)),
   });
   return true;
 }

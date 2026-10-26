@@ -17,13 +17,13 @@ describe("buildMockReports", () => {
   it("includes pending, verified, and resolved examples with realistic progress", () => {
     const reports = buildMockReports(1_761_234_567_890);
     expect(new Set(reports.map((report) => report.status))).toEqual(new Set(["pending", "verified", "resolved"]));
-    expect(reports.filter((report) => report.status === "pending").every((report) => report.upvotes - report.downvotes < 3)).toBe(true);
-    expect(reports.filter((report) => report.status !== "pending").every((report) => report.upvotes - report.downvotes >= 3)).toBe(true);
+    expect(reports.filter((report) => report.status === "pending").every((report) => report.upvotes < 2 && report.downvotes < 2)).toBe(true);
+    expect(reports.filter((report) => report.status !== "pending").every((report) => report.upvotes >= 2)).toBe(true);
     expect(reports.filter((report) => report.status === "resolved").every((report) => report.resolutionConfirms === 3)).toBe(true);
     expect(reports.filter((report) => report.status === "pending")).toHaveLength(40);
     expect(reports.filter((report) => report.status === "verified")).toHaveLength(40);
     expect(reports.filter((report) => report.status === "resolved")).toHaveLength(20);
-    expect(reports.filter((report) => report.status === "pending").every((report) => report.upvotes === 2 && report.downvotes === 2)).toBe(true);
+    expect(reports.filter((report) => report.status === "pending").every((report) => report.upvotes === 1 && report.downvotes === 1)).toBe(true);
     expect(reports.filter((report) => report.status === "verified").every((report) => report.resolutionConfirms === 2)).toBe(true);
   });
 });

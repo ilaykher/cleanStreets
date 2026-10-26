@@ -20,7 +20,6 @@ import {
 
 interface HazardMapProps {
   reports: HazardReport[];
-  myVotes: Record<string, VoteDirection>;
   onVote: (reportId: string, direction: VoteDirection) => void;
   onResolve: (reportId: string) => void;
   myResolutions: string[];
@@ -33,7 +32,6 @@ interface HazardMapProps {
 
 function buildPopupContent(
   report: HazardReport,
-  myVote: VoteDirection | undefined,
   onVote: (reportId: string, direction: VoteDirection) => void,
   onResolve: (reportId: string) => void,
   resolvedByMe: boolean,
@@ -54,14 +52,14 @@ function buildPopupContent(
   addText("mt-2 text-xs font-bold text-slate-800", `Status: ${report.status[0].toUpperCase()}${report.status.slice(1)}`);
   addText("text-xs text-slate-600", `Upvotes ${report.upvotes} · Downvotes ${report.downvotes}`);
   addText("text-xs text-slate-600", report.status === "verified"
-    ? `Verified ${Math.min(3, report.upvotes - report.downvotes)}/3`
+    ? `Verified ${Math.min(2, report.upvotes)}/3 upvotes`
     : report.status === "resolved"
       ? `Resolved ${report.resolutionConfirms ?? 3}/3 confirmations`
-      : `Pending ${report.upvotes - report.downvotes}/3 net votes`);
+      : `Pending ${report.upvotes + report.downvotes}/3 votes`);
 
   const row = document.createElement("div");
   row.className = "mt-3 flex gap-2";
-  const votingClosed = Boolean(myVote) || report.status === "rejected" || report.status === "resolved";
+  const votingClosed = report.status === "rejected" || report.status === "resolved";
 
   (["up", "down"] as const).forEach((direction) => {
     const button = document.createElement("button");
@@ -177,7 +175,6 @@ export function MapLegend() {
 
 export default function HazardMap({
   reports,
-  myVotes,
   onVote,
   onResolve,
   myResolutions,
@@ -195,14 +192,12 @@ export default function HazardMap({
   const openReportIdRef = useRef<string | null>(null);
 
   const reportsRef = useRef(reports);
-  const myVotesRef = useRef(myVotes);
   const onVoteRef = useRef(onVote);
   const onResolveRef = useRef(onResolve);
   const myResolutionsRef = useRef(myResolutions);
   const pickModeRef = useRef(pickMode);
   const onPickRef = useRef(onPickLocation);
   reportsRef.current = reports;
-  myVotesRef.current = myVotes;
   onVoteRef.current = onVote;
   onResolveRef.current = onResolve;
   myResolutionsRef.current = myResolutions;
@@ -308,7 +303,7 @@ export default function HazardMap({
     });
 
     refreshOpenReport();
-  }, [reports, myVotes]);
+  }, [reports]);
 
   useEffect(() => {
     if (selectedReportId) openReport(selectedReportId);
@@ -342,7 +337,7 @@ export default function HazardMap({
     if (!map || !marker || !report) return;
 
     openReportIdRef.current = reportId;
-    marker.setPopupContent(buildPopupContent(report, myVotesRef.current[reportId], onVoteRef.current, onResolveRef.current, myResolutionsRef.current.includes(reportId)));
+    marker.setPopupContent(buildPopupContent(report, onVoteRef.current, onResolveRef.current, myResolutionsRef.current.includes(reportId)));
     marker.openPopup();
     openReportIdRef.current = reportId;
   }
@@ -358,7 +353,7 @@ export default function HazardMap({
       openReportIdRef.current = null;
       return;
     }
-    marker.setPopupContent(buildPopupContent(report, myVotesRef.current[openId], onVoteRef.current, onResolveRef.current, myResolutionsRef.current.includes(openId)));
+    marker.setPopupContent(buildPopupContent(report, onVoteRef.current, onResolveRef.current, myResolutionsRef.current.includes(openId)));
   }
 
   return <div ref={containerRef} className="h-full min-h-[420px] w-full" />;

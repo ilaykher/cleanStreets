@@ -19,7 +19,7 @@ import { barangayAt } from "@/lib/barangay-boundaries";
 
 
 export default function Index() {
-  const { reports, myVotes, myResolutions, filters } = useHazardState();
+  const { reports, myResolutions, filters } = useHazardState();
   const [pickMode, setPickMode] = useState(false);
   const [pickedLocation, setPickedLocation] = useState<LatLngLiteral | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
@@ -124,7 +124,6 @@ export default function Index() {
           <div className="relative h-[520px] sm:h-[600px] lg:h-[680px]">
             <HazardMap
               reports={filteredReports.filter((report) => barangayAt(report) === report.area)}
-              myVotes={myVotes}
               onVote={handleVote}
               onResolve={(id) => confirmResolved(id)}
               myResolutions={myResolutions}

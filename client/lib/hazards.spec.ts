@@ -19,25 +19,21 @@ const base: HazardReport = {
 
 describe("applyVote", () => {
   it("verifies a pending report at the upvote threshold", () => {
-    const once = applyVote(applyVote(base, "up"), "up");
-    expect(once.status).toBe("pending");
-    expect(applyVote(once, "up").status).toBe("verified");
+    expect(applyVote(applyVote(base, "up"), "up").status).toBe("verified");
   });
 
-  it("rejects a report once downvotes outnumber upvotes past the threshold", () => {
-    const report = [1, 2, 3].reduce((r) => applyVote(r, "down"), base);
+  it("rejects a report at two downvotes", () => {
+    const report = [1, 2].reduce((r) => applyVote(r, "down"), base);
     expect(report.status).toBe("rejected");
   });
 
-  it("keeps a pending report pending when downvotes are not yet decisive", () => {
-    const report = applyVote(applyVote(applyVote(base, "up"), "down"), "down");
+  it("keeps a report pending after one upvote and one downvote", () => {
+    const report = applyVote(applyVote(base, "up"), "down");
     expect(report.status).toBe("pending");
   });
 
-  it("requires three net downvotes, not just three total downvotes", () => {
-    const balanced = { ...base, upvotes: 2, downvotes: 2 };
-    expect(applyVote(balanced, "down").status).toBe("pending");
-    expect(applyVote({ ...balanced, downvotes: 4 }, "down").status).toBe("rejected");
+  it("verifies after two upvotes", () => {
+    expect(applyVote(applyVote(base, "up"), "up").status).toBe("verified");
   });
 
 });

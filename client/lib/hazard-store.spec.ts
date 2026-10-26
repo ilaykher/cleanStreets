@@ -5,11 +5,11 @@ import { buildMockReports } from "./mock-reports";
 describe("browser-local hazard actions", () => {
   afterAll(() => vi.unstubAllGlobals());
 
-  it("enforces net-vote thresholds and one vote or resolution per browser", async () => {
+  it("allows repeat votes and limits resolution confirmations per browser", async () => {
     const reports: HazardReport[] = [
       { id: "up", typeId: "pothole", description: "Upvote threshold", area: "Barangay 176-A", lat: 14.777, lng: 121.043, createdAt: new Date().toISOString(), upvotes: 2, downvotes: 0, status: "pending" },
-      { id: "down", typeId: "pothole", description: "Downvote threshold", area: "Barangay 176-A", lat: 14.777, lng: 121.044, createdAt: new Date().toISOString(), upvotes: 0, downvotes: 2, status: "pending" },
-      { id: "balanced", typeId: "pothole", description: "Balanced votes", area: "Barangay 176-A", lat: 14.777, lng: 121.045, createdAt: new Date().toISOString(), upvotes: 2, downvotes: 2, status: "pending" },
+      { id: "down", typeId: "pothole", description: "Downvote threshold", area: "Barangay 176-A", lat: 14.777, lng: 121.044, createdAt: new Date().toISOString(), upvotes: 2, downvotes: 1, status: "verified" },
+      { id: "balanced", typeId: "pothole", description: "Balanced votes", area: "Barangay 176-A", lat: 14.777, lng: 121.045, createdAt: new Date().toISOString(), upvotes: 1, downvotes: 1, status: "pending" },
       { id: "resolve", typeId: "pothole", description: "Resolution threshold", area: "Barangay 176-A", lat: 14.777, lng: 121.046, createdAt: new Date().toISOString(), upvotes: 3, downvotes: 0, status: "verified", resolutionConfirms: 2 },
       ...buildMockReports(),
     ];
@@ -31,18 +31,18 @@ describe("browser-local hazard actions", () => {
     expect(JSON.parse(values.get("cleanstreets:v7")!).reports).toHaveLength(countBeforeAnyway + 1);
 
     expect(store.castVote("up", "up")).toBe(true);
-    expect(store.castVote("up", "up")).toBe(false);
+    expect(store.castVote("up", "up")).toBe(true);
     expect(store.castVote("down", "down")).toBe(true);
     expect(store.castVote("down", "down")).toBe(false);
     expect(store.castVote("balanced", "up")).toBe(true);
-    expect(store.castVote("balanced", "up")).toBe(false);
+    expect(store.castVote("balanced", "up")).toBe(true);
     expect(store.confirmResolved("resolve")).toBe(true);
     expect(store.confirmResolved("resolve")).toBe(false);
 
     const saved = JSON.parse(values.get("cleanstreets:v7")!) as { reports: HazardReport[] };
     expect(saved.reports.find((report) => report.id === "up")?.status).toBe("verified");
-    expect(saved.reports.find((report) => report.id === "down")?.status).toBe("rejected");
-    expect(saved.reports.find((report) => report.id === "balanced")?.status).toBe("pending");
+    expect(saved.reports.some((report) => report.id === "down")).toBe(false);
+    expect(saved.reports.find((report) => report.id === "balanced")?.status).toBe("verified");
     expect(saved.reports.find((report) => report.id === "resolve")?.status).toBe("resolved");
 
     const countBeforeFilter = saved.reports.length;

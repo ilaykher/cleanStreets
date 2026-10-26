@@ -1,5 +1,5 @@
-export const VERIFY_THRESHOLD = 3;
-export const REJECT_THRESHOLD = 3;
+export const VERIFY_THRESHOLD = 2;
+export const REJECT_THRESHOLD = 2;
 export const DUPLICATE_RADIUS_METERS = 40;
 
 export const AREAS = [
@@ -121,8 +121,8 @@ export function resolveStatus(
   report: Pick<HazardReport, "status" | "upvotes" | "downvotes">,
 ): HazardStatus {
   if (report.status === "rejected" || report.status === "resolved") return report.status;
-  if (report.upvotes - report.downvotes >= VERIFY_THRESHOLD) return "verified";
-  if (report.downvotes - report.upvotes >= REJECT_THRESHOLD) return "rejected";
+  if (report.downvotes >= REJECT_THRESHOLD) return "rejected";
+  if (report.upvotes >= VERIFY_THRESHOLD && report.upvotes > report.downvotes) return "verified";
   return report.status;
 }
 
